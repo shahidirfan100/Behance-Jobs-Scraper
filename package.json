@@ -1,0 +1,27 @@
+{
+  "name": "behance-jobs-scraper",
+  "version": "2.0.0",
+  "description": "Professional Behance Jobs Scraper - Extract job listings from Behance using hybrid API + HTML parsing with Crawlee.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "behance",
+    "jobs",
+    "scraper",
+    "apify",
+    "crawlee",
+    "job-board",
+    "job-scraping"
+  ],
+  "author": "Shahid Irfan",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "apify": "^3.4.5",
+    "crawlee": "^3.15.3",
+    "cheerio": "^1.0.0-rc.12",
+    "got-scraping": "^4.1.2"
+  }
+}

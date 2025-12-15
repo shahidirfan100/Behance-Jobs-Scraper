@@ -1,0 +1,13 @@
+{
+  "keyword": "graphic designer",
+  "location": "New York",
+  "job_type": "",
+  "sort": "published_on",
+  "results_wanted": 50,
+  "max_pages": 5,
+  "collectDetails": true,
+  "proxyConfiguration": {
+    "useApifyProxy": true,
+    "apifyProxyGroups": ["RESIDENTIAL"]
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "title": "Behance Jobs Scraper",
+  "description": "Extract job listings from Behance. Search by keyword, location, or job type. The scraper uses a hybrid approach with API requests and HTML parsing for reliable data extraction.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "startUrl": {
+      "title": "Start URL (Optional)",
+      "type": "string",
+      "description": "Start scraping from a specific Behance joblist URL. If provided, this overrides keyword/location filters.",
+      "editor": "textfield",
+      "pattern": "^https://www\\.behance\\.net/.*"
+    },
+    "keyword": {
+      "title": "Search Keyword",
+      "type": "string",
+      "description": "Job title or keyword to search for (e.g., 'Graphic Designer', 'UX Designer', 'Illustrator', 'Creative Director').",
+      "editor": "textfield",
+      "prefill": "graphic designer",
+      "maxLength": 200
+    },
+    "location": {
+      "title": "Location",
+      "type": "string",
+      "description": "Filter jobs by location (e.g., 'New York', 'San Francisco', 'Remote', 'London').",
+      "editor": "textfield",
+      "maxLength": 100
+    },
+    "job_type": {
+      "title": "Job Type (Optional)",
+      "type": "string",
+      "description": "Filter by employment type (e.g., 'Full-time', 'Part-time', 'Freelance', 'Contract').",
+      "editor": "textfield",
+      "maxLength": 50
+    },
+    "sort": {
+      "title": "Sort By",
+      "type": "string",
+      "description": "Sort order for job listings.",
+      "editor": "select",
+      "default": "published_on",
+      "enum": ["published_on", "relevance"],
+      "enumTitles": ["Most Recent", "Most Relevant"]
+    },
+    "collectDetails": {
+      "title": "Scrape Full Job Details",
+      "type": "boolean",
+      "description": "Enable to visit each job page and extract complete descriptions. Disable for faster scraping with basic info only.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "results_wanted": {
+      "title": "Maximum Results",
+      "type": "integer",
+      "description": "Maximum number of job listings to scrape. Set higher for comprehensive data collection.",
+      "minimum": 1,
+      "maximum": 10000,
+      "default": 100,
+      "editor": "number"
+    },
+    "max_pages": {
+      "title": "Maximum Pages to Scrape",
+      "type": "integer",
+      "description": "Limit the number of listing pages to process (safety cap to prevent excessive requests).",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20,
+      "editor": "number"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy Configuration",
+      "type": "object",
+      "description": "Proxy settings for requests. Residential proxies recommended for Behance to avoid rate limiting.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"]
+      }
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
