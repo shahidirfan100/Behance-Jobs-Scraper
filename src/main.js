@@ -166,6 +166,12 @@ async function main() {
         `Starting crawl (API-first): keyword="${keyword}" location="${location}" job_type="${job_type}" collectDetails=${collectDetails} results_wanted=${RESULTS_WANTED} max_pages=${MAX_PAGES} sort=${sort}`,
     );
 
+    const headers = {
+        Accept: 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    };
+
     const crawler = new HttpCrawler({
         requestQueue,
         proxyConfiguration: proxyConf,
@@ -175,13 +181,18 @@ async function main() {
         maxConcurrency: MAX_CONCURRENT_REQS,
         autoscaledPoolOptions: { logIntervalSecs: 300 },
         statisticsOptions: { logIntervalSecs: 300 },
-        async requestHandler({ request, body, log: crawlerLog, session }) {
+        async requestHandler({ request, sendRequest, log: crawlerLog, session }) {
             if (saved >= RESULTS_WANTED) {
                 stopReason = stopReason || 'results_wanted_reached';
                 return;
             }
 
             const label = request.userData?.label || 'LIST';
+            const response = await sendRequest({
+                headers,
+                responseType: 'text',
+            });
+            const body = response?.body ?? '';
             const text = Buffer.isBuffer(body) ? body.toString('utf-8') : String(body ?? '');
 
             if (label === 'LIST') {
