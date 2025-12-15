@@ -12,12 +12,6 @@ COPY --chown=myuser:myuser package*.json Dockerfile ./
 # tree for debugging
 RUN npm --quiet set progress=false \
     && npm install --omit=dev --omit=optional --no-audit --no-fund \
-    && echo "Installed NPM packages:" \
-    && (npm list --omit=dev --all || true) \
-    && echo "Node.js version:" \
-    && node --version \
-    && echo "NPM version:" \
-    && npm --version \
     && rm -r ~/.npm
 
 # Next, copy the remaining files and directories with the source code.

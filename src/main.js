@@ -29,6 +29,64 @@ const buildListUrl = (page = 1, kw = '', loc = '', jType = '', sortBy = 'publish
     return u.href;
 };
 
+const DEFAULTS = Object.freeze({
+    blockAssets: true,
+    useSitemapFallback: true,
+    sitemapLimit: 2000,
+    maxConcurrency: 10,
+});
+
+const normalizeWhitespace = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+
+const extractLabeledValue = (label, key) => {
+    const re = new RegExp(`${key}\\s*:\\s*([^,]+)`, 'i');
+    const m = normalizeWhitespace(label).match(re);
+    return m?.[1]?.trim() || null;
+};
+
+const parseListingLabel = (label) => {
+    if (!label) return {};
+    return {
+        title: extractLabeledValue(label, 'Job'),
+        company: extractLabeledValue(label, 'Employer') || extractLabeledValue(label, 'Company'),
+        location: extractLabeledValue(label, 'Location'),
+        salary: extractLabeledValue(label, 'Salary') || extractLabeledValue(label, 'Compensation'),
+        job_type: extractLabeledValue(label, 'Job\\s*Type') || extractLabeledValue(label, 'Employment\\s*Type'),
+    };
+};
+
+const cleanJobTitle = (rawTitle) => {
+    const s = normalizeWhitespace(rawTitle);
+    if (!s) return null;
+    const jobLabelTitle = parseListingLabel(s).title;
+    if (jobLabelTitle) return normalizeWhitespace(jobLabelTitle);
+    const first = s.split(',')[0] ?? s;
+    const cleaned = first.replace(/^job\s*:\s*/i, '').trim();
+    return cleaned || null;
+};
+
+async function extractJobMetaFromDetailPage(page) {
+    return page.evaluate(() => {
+        const norm = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+        const lines = document.body ? document.body.innerText.split('\n').map(norm).filter(Boolean) : [];
+        const lower = (v) => norm(v).toLowerCase();
+
+        const valueAfter = (keys) => {
+            const keySet = new Set(keys.map((k) => k.toLowerCase()));
+            for (let i = 0; i < lines.length - 1; i++) {
+                if (keySet.has(lower(lines[i]))) return lines[i + 1] || null;
+            }
+            return null;
+        };
+
+        return {
+            location: valueAfter(['location']),
+            salary: valueAfter(['salary', 'compensation']),
+            job_type: valueAfter(['job type', 'employment type']),
+        };
+    });
+}
+
 async function fetchJobUrlsFromSitemap({ limit, proxyUrl }) {
     const res = await gotScraping({
         url: 'https://www.behance.net/sitemap/jobs',
@@ -54,6 +112,7 @@ async function fetchJobUrlsFromSitemap({ limit, proxyUrl }) {
 async function main() {
     const input = (await Actor.getInput()) || {};
     const {
+        startUrls,
         keyword = '',
         location = '',
         job_type = '',
@@ -61,28 +120,36 @@ async function main() {
         results_wanted: resultsWantedRaw = 100,
         max_pages: maxPagesRaw = 20,
         collectDetails = true,
-        startUrl,
-        startUrls,
-        url,
-        mode: modeRaw = 'auto',
-        useSitemapFallback = true,
-        sitemapLimit: sitemapLimitRaw = 2000,
-        blockAssets = true,
-        maxConcurrency: maxConcurrencyRaw = 10,
         proxyConfiguration,
     } = input;
 
     const RESULTS_WANTED = Number.isFinite(+resultsWantedRaw) ? Math.max(1, +resultsWantedRaw) : Number.MAX_SAFE_INTEGER;
     const MAX_PAGES = Number.isFinite(+maxPagesRaw) ? Math.max(1, +maxPagesRaw) : 20;
-    const maxConcurrency = Number.isFinite(+maxConcurrencyRaw) ? Math.max(1, +maxConcurrencyRaw) : 10;
-    const sitemapLimit = Number.isFinite(+sitemapLimitRaw) ? Math.max(1, +sitemapLimitRaw) : 2000;
-    const mode = String(modeRaw || 'auto').toLowerCase();
+    const maxConcurrency = DEFAULTS.maxConcurrency;
+    const sitemapLimit = DEFAULTS.sitemapLimit;
 
     const proxyConf = proxyConfiguration ? await Actor.createProxyConfiguration({ ...proxyConfiguration }) : undefined;
     const requestQueue = await RequestQueue.open();
 
     const seenJobIds = new Set();
     let saved = 0;
+    let listPagesProcessed = 0;
+    let detailsProcessed = 0;
+
+    const initial = [];
+    if (Array.isArray(startUrls) && startUrls.length) {
+        const sources = startUrls.map((s) => (typeof s === 'string' ? { url: s } : s)).filter(Boolean);
+        const requestList = await Actor.openRequestList('START_URLS', sources);
+        for (;;) {
+            const req = await requestList.fetchNextRequest();
+            if (!req) break;
+            initial.push(req.url);
+        }
+        await requestList.persistState();
+    }
+
+    const discoveryUsesListing =
+        Boolean(String(keyword || '').trim()) || Boolean(String(location || '').trim()) || Boolean(String(job_type || '').trim());
 
     const enqueueDetail = async (jobUrl, partial = {}) => {
         if (!jobUrl || saved >= RESULTS_WANTED) return;
@@ -102,32 +169,22 @@ async function main() {
         });
     };
 
-    const initial = [];
-    if (Array.isArray(startUrls) && startUrls.length) {
-        const sources = startUrls.map((s) => (typeof s === 'string' ? { url: s } : s)).filter(Boolean);
-        const requestList = await Actor.openRequestList('START_URLS', sources);
-        for (;;) {
-            const req = await requestList.fetchNextRequest();
-            if (!req) break;
-            initial.push(req.url);
-        }
-        await requestList.persistState();
-    }
-    if (startUrl) initial.push(startUrl);
-    if (url) initial.push(url);
-
     if (initial.length) {
         for (const u of initial) {
             const label = isJobDetailUrl(u) ? 'DETAIL' : 'LIST';
             await requestQueue.addRequest({ url: u, userData: { label, pageNo: 1 } });
         }
-    } else if (mode === 'sitemap') {
+    } else if (discoveryUsesListing) {
+        await enqueueListPage(1);
+    } else {
         const proxyUrl = proxyConf ? (await proxyConf.newUrl()) : undefined;
         const sitemapUrls = await fetchJobUrlsFromSitemap({ limit: Math.min(sitemapLimit, RESULTS_WANTED), proxyUrl });
         for (const u of sitemapUrls) await enqueueDetail(u);
-    } else {
-        await enqueueListPage(1);
     }
+
+    log.info(
+        `Starting crawl: keyword="${keyword}" location="${location}" job_type="${job_type}" collectDetails=${collectDetails} results_wanted=${RESULTS_WANTED} max_pages=${MAX_PAGES}`,
+    );
 
     const crawler = new PlaywrightCrawler({
         requestQueue,
@@ -144,10 +201,10 @@ async function main() {
                     'Upgrade-Insecure-Requests': '1',
                 });
 
-                if (!blockAssets) return;
+                if (!DEFAULTS.blockAssets) return;
                 await page.route('**/*', async (route) => {
                     const type = route.request().resourceType();
-                    if (type === 'image' || type === 'media' || type === 'font') return route.abort();
+                    if (type === 'image' || type === 'media' || type === 'font' || type === 'stylesheet') return route.abort();
                     return route.continue();
                 });
             },
@@ -158,11 +215,12 @@ async function main() {
 
             if (label === 'LIST') {
                 const pageNo = request.userData?.pageNo || 1;
-                crawlerLog.info(`LIST page ${pageNo}: ${request.url}`);
+                listPagesProcessed += 1;
+                crawlerLog.debug(`LIST page ${pageNo}: ${request.url}`);
 
                 await page.waitForLoadState('domcontentloaded');
                 try {
-                    await page.waitForSelector('a[href*=\"/joblist/\"]', { timeout: 25000 });
+                    await page.waitForSelector('a[href*=\"/joblist/\"]', { timeout: 10000 });
                 } catch {
                     // ignore - we will still attempt extraction and potentially trigger sitemap fallback
                 }
@@ -174,8 +232,9 @@ async function main() {
                         if (!href.includes('/joblist/')) continue;
                         const abs = new URL(href, location.origin).href;
                         if (!/\/joblist\/\d+/.test(abs)) continue;
-                        const title = (a.textContent || '').trim() || a.getAttribute('aria-label') || null;
-                        out.push({ url: abs, title });
+                        const aria = a.getAttribute('aria-label') || null;
+                        const textTitle = (a.textContent || '').trim() || null;
+                        out.push({ url: abs, aria, textTitle });
                     }
                     return out;
                 });
@@ -186,15 +245,26 @@ async function main() {
                     if (!jobId) continue;
                     if (!unique.has(jobId)) unique.set(jobId, { ...j, jobId });
                 }
-                const found = [...unique.values()];
-                crawlerLog.info(`Found ${found.length} job links on page ${pageNo}`);
+                const found = [...unique.values()].map((j) => {
+                    const fromLabel = parseListingLabel(j.aria);
+                    const titleCandidate = cleanJobTitle(fromLabel.title || j.textTitle || j.aria);
+                    return {
+                        ...j,
+                        title: titleCandidate,
+                        company: fromLabel.company || null,
+                        location: fromLabel.location || null,
+                        salary: fromLabel.salary || null,
+                        job_type: fromLabel.job_type || null,
+                    };
+                });
+                crawlerLog.debug(`Found ${found.length} job links on page ${pageNo}`);
 
                 if (found.length === 0) {
                     const pageTitle = await page.title().catch(() => '');
                     const maybeBlocked = pageTitle === 'Behance' && (await page.content()).length < 80000;
 
-                    if (useSitemapFallback && pageNo === 1) {
-                        crawlerLog.warning('No jobs found on LIST page 1, falling back to sitemap discovery.');
+                    if (DEFAULTS.useSitemapFallback && pageNo === 1) {
+                        crawlerLog.warning('No jobs found on LIST page 1, switching to sitemap discovery.');
                         const proxyUrl = proxyConf ? (await proxyConf.newUrl()) : undefined;
                         const sitemapUrls = await fetchJobUrlsFromSitemap({
                             limit: Math.min(sitemapLimit, RESULTS_WANTED),
@@ -214,17 +284,23 @@ async function main() {
                 if (collectDetails) {
                     const remaining = RESULTS_WANTED - saved;
                     for (const j of found.slice(0, Math.max(0, remaining))) {
-                        await enqueueDetail(j.url, { title: j.title || null });
+                        await enqueueDetail(j.url, {
+                            title: j.title || null,
+                            company: j.company || null,
+                            location: j.location || null,
+                            salary: j.salary || null,
+                            job_type: j.job_type || null,
+                        });
                     }
                 } else {
                     const remaining = RESULTS_WANTED - saved;
                     const toPush = found.slice(0, Math.max(0, remaining)).map((j) => ({
                         id: j.jobId,
                         title: j.title || null,
-                        company: null,
-                        location: null,
-                        salary: null,
-                        job_type: null,
+                        company: j.company || null,
+                        location: j.location || null,
+                        salary: j.salary || null,
+                        job_type: j.job_type || null,
                         date_posted: null,
                         description_html: null,
                         description_text: null,
@@ -236,11 +312,13 @@ async function main() {
                     if (toPush.length) {
                         await Dataset.pushData(toPush);
                         saved += toPush.length;
-                        crawlerLog.info(`Saved ${toPush.length} jobs (total: ${saved})`);
+                        if (saved % 50 === 0 || saved >= RESULTS_WANTED) {
+                            crawlerLog.info(`Saved ${saved} jobs`);
+                        }
                     }
                 }
 
-                if (saved < RESULTS_WANTED && pageNo < MAX_PAGES && mode !== 'sitemap') {
+                if (saved < RESULTS_WANTED && pageNo < MAX_PAGES) {
                     await enqueueListPage(pageNo + 1);
                 }
                 return;
@@ -248,17 +326,19 @@ async function main() {
 
             if (label === 'DETAIL') {
                 const jobId = request.userData?.jobId ?? getJobIdFromUrl(request.url);
-                crawlerLog.info(`DETAIL ${jobId ?? ''}: ${request.url}`);
+                detailsProcessed += 1;
+                crawlerLog.debug(`DETAIL ${jobId ?? ''}: ${request.url}`);
 
                 await page.waitForLoadState('domcontentloaded');
+                await page.waitForSelector('h1, script[type=\"application/ld+json\"]', { timeout: 15000 }).catch(() => {});
 
                 const item = {
                     id: jobId,
                     title: request.userData?.partial?.title ?? null,
-                    company: null,
-                    location: null,
-                    salary: null,
-                    job_type: null,
+                    company: request.userData?.partial?.company ?? null,
+                    location: request.userData?.partial?.location ?? null,
+                    salary: request.userData?.partial?.salary ?? null,
+                    job_type: request.userData?.partial?.job_type ?? null,
                     date_posted: null,
                     description_html: null,
                     description_text: null,
@@ -303,7 +383,14 @@ async function main() {
                 }
 
                 if (!item.title) {
-                    item.title = (await page.locator('h1').first().textContent().catch(() => null))?.trim() || null;
+                    item.title = cleanJobTitle((await page.locator('h1').first().textContent().catch(() => null))?.trim() || null);
+                }
+
+                if (!item.location || !item.salary || !item.job_type) {
+                    const meta = await extractJobMetaFromDetailPage(page).catch(() => ({}));
+                    item.location = item.location || meta.location || null;
+                    item.salary = item.salary || meta.salary || null;
+                    item.job_type = item.job_type || meta.job_type || null;
                 }
 
                 if (!item.description_html) {
@@ -325,6 +412,9 @@ async function main() {
                 if (item.title) {
                     await Dataset.pushData(item);
                     saved += 1;
+                    if (saved % 25 === 0 || saved >= RESULTS_WANTED) {
+                        crawlerLog.info(`Saved ${saved} jobs`);
+                    }
                 }
             }
         },
@@ -334,7 +424,9 @@ async function main() {
     });
 
     await crawler.run();
-    log.info(`Scraping completed. Saved ${saved} job items.`);
+    log.info(
+        `Scraping completed. Saved ${saved} job items. Processed list pages=${listPagesProcessed}, detail pages=${detailsProcessed}.`,
+    );
 }
 
 try {
