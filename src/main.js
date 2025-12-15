@@ -5,6 +5,12 @@ import { Dataset, HttpCrawler, RequestQueue } from 'crawlee';
 await Actor.init();
 
 const BEHANCE_CLIENT_ID = 'BehanceWebSusi1';
+const MAX_CONCURRENT_REQS = 25;
+const MAX_EMPTY_LIST_PAGES = 2;
+const SORT_MAP = new Map([
+    ['published_on', 'published_on'],
+    ['relevance', 'relevance'],
+]);
 
 const normalizeWhitespace = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const normalizeLower = (s) => normalizeWhitespace(s).toLowerCase();
@@ -20,11 +26,12 @@ const unixToIso = (seconds) => {
     return new Date(n * 1000).toISOString();
 };
 
-const buildJobsListApiUrl = ({ page, keyword }) => {
+const buildJobsListApiUrl = ({ page, keyword, sort }) => {
     const u = new URL('https://www.behance.net/v2/jobs');
     u.searchParams.set('client_id', BEHANCE_CLIENT_ID);
     u.searchParams.set('page', String(page));
     if (keyword && String(keyword).trim()) u.searchParams.set('search', String(keyword).trim());
+    if (sort && SORT_MAP.has(sort)) u.searchParams.set('sort', SORT_MAP.get(sort));
     return u.href;
 };
 
@@ -60,16 +67,18 @@ async function main() {
     const input = (await Actor.getInput()) || {};
     const {
         startUrls,
-        keyword = '',
+        keyword: keywordInput = '',
         location = '',
         job_type = '',
-        sort = 'published_on',
+        sort: sortInput = 'published_on',
         results_wanted: resultsWantedRaw = 100,
         max_pages: maxPagesRaw = 20,
         collectDetails = true,
         proxyConfiguration,
     } = input;
 
+    const keyword = normalizeWhitespace(keywordInput);
+    const sort = SORT_MAP.has(sortInput) ? sortInput : 'published_on';
     const RESULTS_WANTED = Number.isFinite(+resultsWantedRaw) ? Math.max(1, +resultsWantedRaw) : Number.MAX_SAFE_INTEGER;
     const MAX_PAGES = Number.isFinite(+maxPagesRaw) ? Math.max(1, +maxPagesRaw) : 20;
 
@@ -80,6 +89,8 @@ async function main() {
     let saved = 0;
     let listPagesProcessed = 0;
     let detailsProcessed = 0;
+    let consecutiveEmptyListPages = 0;
+    let stopReason = null;
 
     const enqueueJobDetail = async (jobId, partial = {}) => {
         if (!jobId) return;
@@ -94,9 +105,30 @@ async function main() {
 
     const enqueueListPage = async (pageNo) => {
         await requestQueue.addRequest({
-            url: buildJobsListApiUrl({ page: pageNo, keyword }),
+            url: buildJobsListApiUrl({ page: pageNo, keyword, sort }),
             userData: { label: 'LIST', pageNo },
         });
+    };
+
+    const createListRequestFromStartUrl = (startUrl) => {
+        try {
+            const parsed = new URL(startUrl);
+            if (/\/v2\/jobs/i.test(parsed.pathname)) {
+                parsed.searchParams.set('client_id', BEHANCE_CLIENT_ID);
+                return { url: parsed.href, userData: { label: 'LIST', pageNo: Number(parsed.searchParams.get('page')) || 1 } };
+            }
+
+            if (/\/joblist/i.test(parsed.pathname)) {
+                const startPage = Number(parsed.searchParams.get('page')) || 1;
+                const startKeyword = parsed.searchParams.get('search') || keyword;
+                const startSort = parsed.searchParams.get('sort') || sort;
+                const apiUrl = buildJobsListApiUrl({ page: startPage, keyword: startKeyword, sort: startSort });
+                return { url: apiUrl, userData: { label: 'LIST', pageNo: startPage } };
+            }
+        } catch {
+            // ignore malformed URLs
+        }
+        return null;
     };
 
     const initial = [];
@@ -117,7 +149,13 @@ async function main() {
             if (jobId) {
                 await enqueueJobDetail(jobId);
             } else {
-                await requestQueue.addRequest({ url: u, userData: { label: 'LIST', pageNo: 1 } });
+                const converted = createListRequestFromStartUrl(u);
+                if (converted) {
+                    await requestQueue.addRequest(converted);
+                } else {
+                    await requestQueue.addRequest({ url: buildJobsListApiUrl({ page: 1, keyword, sort }), userData: { label: 'LIST', pageNo: 1 } });
+                    log.warning(`Unsupported start URL format "${u}", falling back to standard search.`);
+                }
             }
         }
     } else {
@@ -132,13 +170,16 @@ async function main() {
         requestQueue,
         proxyConfiguration: proxyConf,
         useSessionPool: true,
-        maxRequestRetries: 5,
+        maxRequestRetries: 3,
         requestHandlerTimeoutSecs: 60,
-        maxConcurrency: 25,
+        maxConcurrency: MAX_CONCURRENT_REQS,
         autoscaledPoolOptions: { logIntervalSecs: 300 },
         statisticsOptions: { logIntervalSecs: 300 },
         async requestHandler({ request, body, log: crawlerLog, session }) {
-            if (saved >= RESULTS_WANTED) return;
+            if (saved >= RESULTS_WANTED) {
+                stopReason = stopReason || 'results_wanted_reached';
+                return;
+            }
 
             const label = request.userData?.label || 'LIST';
             const text = Buffer.isBuffer(body) ? body.toString('utf-8') : String(body ?? '');
@@ -199,9 +240,33 @@ async function main() {
                 }
 
                 const progressCount = collectDetails ? seenJobIds.size : saved;
-                if (progressCount < RESULTS_WANTED && pageNo < MAX_PAGES) {
-                    await enqueueListPage(pageNo + 1);
+                if (filtered.length === 0) {
+                    consecutiveEmptyListPages += 1;
+                    if (consecutiveEmptyListPages >= MAX_EMPTY_LIST_PAGES) {
+                        stopReason = 'empty_pages_limit';
+                        crawlerLog.info('Stopping pagination due to repeated empty pages.');
+                        return;
+                    }
+                } else {
+                    consecutiveEmptyListPages = 0;
                 }
+
+                if (progressCount >= RESULTS_WANTED) {
+                    stopReason = 'results_wanted_reached';
+                    return;
+                }
+
+                if (pageNo >= MAX_PAGES) {
+                    stopReason = 'max_pages_reached';
+                    return;
+                }
+
+                if (jobs.length === 0) {
+                    stopReason = stopReason || 'no_more_results';
+                    return;
+                }
+
+                await enqueueListPage(pageNo + 1);
                 return;
             }
 
@@ -243,6 +308,7 @@ async function main() {
                 await Dataset.pushData(item);
                 saved += 1;
                 if (saved % 25 === 0 || saved >= RESULTS_WANTED) crawlerLog.info(`Saved ${saved} jobs`);
+                if (saved >= RESULTS_WANTED) stopReason = 'results_wanted_reached';
             }
         },
         failedRequestHandler({ request, log: crawlerLog }, error) {
@@ -251,9 +317,7 @@ async function main() {
     });
 
     await crawler.run();
-    log.info(
-        `Scraping completed. Saved ${saved} job items. Processed list pages=${listPagesProcessed}, detail pages=${detailsProcessed}.`,
-    );
+    log.info(`Scraping completed. Saved ${saved} job items. Processed list pages=${listPagesProcessed}, detail pages=${detailsProcessed}. Stop reason: ${stopReason || 'finished'}.`);
 }
 
 try {
@@ -261,4 +325,3 @@ try {
 } finally {
     await Actor.exit();
 }
-
