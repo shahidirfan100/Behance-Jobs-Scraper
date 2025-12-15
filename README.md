@@ -1,10 +1,10 @@
 # Behance Jobs Scraper
 
-Extract creative job opportunities from Behance's job board efficiently and reliably. This scraper automatically collects job listings including titles, companies, locations, salaries, job types, and detailed descriptions.
+Extract creative job opportunities from Behance's job board efficiently and reliably. This scraper uses a Playwright browser crawler to handle Behance's client-side rendering and collect job listings including titles, companies, locations, salaries, job types, and detailed descriptions.
 
 ## What does the Behance Jobs Scraper do?
 
-The Behance Jobs Scraper enables you to extract comprehensive job data from Behance's job board programmatically. It uses a hybrid approach combining direct HTTP requests with intelligent HTML parsing to ensure reliable data extraction.
+The Behance Jobs Scraper enables you to extract comprehensive job data from Behance's job board programmatically. It uses a browser-based crawler with optional sitemap fallback to ensure reliable extraction even when pages are rendered client-side.
 
 <strong>Key capabilities:</strong>
 

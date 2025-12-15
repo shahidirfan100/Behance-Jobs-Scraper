@@ -1,6 +1,6 @@
 {
   "title": "Behance Jobs Scraper",
-  "description": "Extract job listings from Behance. Search by keyword, location, or job type. The scraper uses a hybrid approach with API requests and HTML parsing for reliable data extraction.",
+  "description": "Extract job listings from Behance. Behance job pages are rendered client-side, so this actor uses a browser crawler (Playwright) with optional sitemap fallback for reliability.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
@@ -10,6 +10,22 @@
       "description": "Start scraping from a specific Behance joblist URL. If provided, this overrides keyword/location filters.",
       "editor": "textfield",
       "pattern": "^https://www\\.behance\\.net/.*"
+    },
+    "startUrls": {
+      "title": "Start URLs (Optional)",
+      "type": "array",
+      "description": "Optional list of URLs to start from. Each URL can be a listing page (/joblist?page=...) or a job detail page (/joblist/<id>/...).",
+      "editor": "requestListSources",
+      "prefill": []
+    },
+    "mode": {
+      "title": "Mode",
+      "type": "string",
+      "description": "Crawl strategy. Use 'auto' for normal keyword/location scraping. Use 'sitemap' to skip listing pages and crawl job URLs discovered from the Behance jobs sitemap.",
+      "editor": "select",
+      "default": "auto",
+      "enum": ["auto", "sitemap"],
+      "enumTitles": ["Auto (search listing)", "Sitemap (discover job URLs)"]
     },
     "keyword": {
       "title": "Search Keyword",
@@ -65,6 +81,38 @@
       "minimum": 1,
       "maximum": 100,
       "default": 20,
+      "editor": "number"
+    },
+    "maxConcurrency": {
+      "title": "Max Concurrency",
+      "type": "integer",
+      "description": "Maximum number of parallel browser pages.",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 10,
+      "editor": "number"
+    },
+    "blockAssets": {
+      "title": "Block Heavy Assets",
+      "type": "boolean",
+      "description": "Blocks images/fonts/media to speed up crawling.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "useSitemapFallback": {
+      "title": "Fallback To Sitemap If Listing Fails",
+      "type": "boolean",
+      "description": "If the first listing page renders no job links (common during blocks), the actor will enqueue job URLs from the Behance jobs sitemap.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "sitemapLimit": {
+      "title": "Sitemap URL Limit",
+      "type": "integer",
+      "description": "Maximum number of job URLs to load from the sitemap (used by sitemap mode / sitemap fallback).",
+      "minimum": 1,
+      "maximum": 50000,
+      "default": 2000,
       "editor": "number"
     },
     "proxyConfiguration": {
