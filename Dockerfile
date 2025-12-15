@@ -1,10 +1,8 @@
-# Specify the base Docker image. You can read more about
-# the available images at https://crawlee.dev/docs/guides/docker-images
-# You can also use any other image from Docker Hub.
-FROM apify/actor-node-playwright-chrome:22-1.56.1
+# Specify the base Docker image.
+# This actor is API-first (no browser required), so use the smaller Node.js base image.
+FROM apify/actor-node:22
 
-# Copy just package.json and package-lock.json (if present)
-# to speed up the build using Docker layer cache.
+# Copy just package.json and package-lock.json (if present) to speed up the build using Docker layer cache.
 COPY --chown=myuser:myuser package*.json Dockerfile ./
 
 # Install NPM packages, skip optional and development dependencies to

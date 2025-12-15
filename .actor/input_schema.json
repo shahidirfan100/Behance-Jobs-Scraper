@@ -1,6 +1,6 @@
 {
   "title": "Behance Jobs Scraper",
-  "description": "Extract job listings from Behance by keyword, location, and job type. Fast defaults are built-in for production runs (browser-based extraction with automatic fallbacks).",
+  "description": "Extract job listings from Behance by keyword, location, and job type. This actor is API-first (fast + low cost) and fetches listing and detail data from Behance JSON endpoints.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
