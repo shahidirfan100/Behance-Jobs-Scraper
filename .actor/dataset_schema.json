@@ -2,167 +2,37 @@
   "actorSpecification": 1,
   "fields": {
     "title": {
-      "type": "string",
-      "title": "Job Title",
-      "description": "Title of the job position"
+      "type": "string"
     },
     "company": {
-      "type": "string",
-      "title": "Company Name",
-      "description": "Name of the hiring company or organization"
+      "type": "string"
     },
     "location": {
-      "type": "string",
-      "title": "Location",
-      "description": "Job location or 'Remote' if applicable"
+      "type": "string"
     },
     "salary": {
-      "type": "string",
-      "title": "Salary Range",
-      "description": "Salary or compensation information if available"
+      "type": "string"
     },
     "job_type": {
-      "type": "string",
-      "title": "Employment Type",
-      "description": "Full-time, Part-time, Contract, Freelance, etc."
+      "type": "string"
     },
     "date_posted": {
-      "type": "string",
-      "title": "Date Posted",
-      "description": "When the job was posted"
+      "type": "string"
     },
     "description_html": {
-      "type": "string",
-      "title": "Description HTML",
-      "description": "Full job description in HTML format"
+      "type": "string"
     },
     "description_text": {
-      "type": "string",
-      "title": "Description Text",
-      "description": "Job description as plain text"
+      "type": "string"
     },
     "url": {
-      "type": "string",
-      "title": "Job URL",
-      "description": "Direct link to the job posting on Behance"
+      "type": "string"
     },
     "scraped_at": {
-      "type": "string",
-      "title": "Scraped At",
-      "description": "Timestamp when the job was scraped"
+      "type": "string"
     },
     "source": {
-      "type": "string",
-      "title": "Source",
-      "description": "Source website (behance.net)"
-    }
-  },
-  "views": {
-    "overview": {
-      "title": "Job Listings Overview",
-      "description": "Summary view of scraped Behance job listings",
-      "transformation": {
-        "fields": [
-          "title",
-          "company",
-          "location",
-          "salary",
-          "job_type",
-          "date_posted",
-          "url"
-        ]
-      },
-      "display": {
-        "component": "table",
-        "properties": {
-          "title": {
-            "label": "Job Title",
-            "format": "text"
-          },
-          "company": {
-            "label": "Company",
-            "format": "text"
-          },
-          "location": {
-            "label": "Location",
-            "format": "text"
-          },
-          "salary": {
-            "label": "Salary",
-            "format": "text"
-          },
-          "job_type": {
-            "label": "Type",
-            "format": "text"
-          },
-          "date_posted": {
-            "label": "Posted",
-            "format": "text"
-          },
-          "url": {
-            "label": "View Job",
-            "format": "link"
-          }
-        }
-      }
-    },
-    "detailed": {
-      "title": "Detailed Job Information",
-      "description": "Complete job data including descriptions",
-      "transformation": {
-        "fields": [
-          "title",
-          "company",
-          "location",
-          "job_type",
-          "salary",
-          "date_posted",
-          "description_text",
-          "url",
-          "scraped_at"
-        ]
-      },
-      "display": {
-        "component": "table",
-        "properties": {
-          "title": {
-            "label": "Title",
-            "format": "text"
-          },
-          "company": {
-            "label": "Company",
-            "format": "text"
-          },
-          "location": {
-            "label": "Location",
-            "format": "text"
-          },
-          "job_type": {
-            "label": "Type",
-            "format": "text"
-          },
-          "salary": {
-            "label": "Salary",
-            "format": "text"
-          },
-          "date_posted": {
-            "label": "Posted",
-            "format": "text"
-          },
-          "description_text": {
-            "label": "Description",
-            "format": "text"
-          },
-          "url": {
-            "label": "URL",
-            "format": "link"
-          },
-          "scraped_at": {
-            "label": "Scraped",
-            "format": "text"
-          }
-        }
-      }
+      "type": "string"
     }
   }
 }
