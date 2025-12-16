@@ -1,7 +1,7 @@
 import { Actor, log } from 'apify';
+import * as cheerio from 'cheerio';
 import { Dataset, HttpCrawler, RequestQueue } from 'crawlee';
 import { gotScraping } from 'got-scraping';
-import cheerio from 'cheerio';
 import { chromium } from 'playwright';
 
 const BEHANCE_CLIENT_ID = 'BehanceWebSusi1';
@@ -52,6 +52,7 @@ let COLLECT_DETAILS = true;
 let proxyConfiguration;
 
 const seenJobIds = new Set();
+const pendingDetailPartials = new Map();
 const jsonListRequests = new Set();
 const htmlListRequests = new Set();
 const htmlDetailRequests = new Set();
@@ -84,6 +85,12 @@ function unixToIso(seconds) {
 function getJobIdFromUrl(url) {
     const match = String(url ?? '').match(/\/joblist\/(\d+)/i);
     return match?.[1] ? String(match[1]) : null;
+}
+
+function normalizeArrayLike(value, fallback = []) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') return Object.values(value);
+    return fallback;
 }
 
 function matchesLocation(job, locationInput) {
@@ -280,9 +287,9 @@ function buildPartialFromJob(job) {
         url: job.url || null,
         allow_remote: Boolean(job.allow_remote),
         date_posted: unixToIso(job.posted_on),
-        tags: Array.isArray(job.tags) ? job.tags : [],
-        fields: Array.isArray(job.fields) ? job.fields : job.fields ? Object.values(job.fields) : [],
-        categories: job.categories ? Object.values(job.categories) : [],
+        tags: normalizeArrayLike(job.tags),
+        fields: normalizeArrayLike(job.fields),
+        categories: normalizeArrayLike(job.categories),
     };
 }
 
@@ -302,13 +309,9 @@ function composeJobItem(job, partial = {}) {
         description_text: job?.description_plain || job?.description_text || partial.description_text || null,
         application_url: job?.application_url || partial.application_url || null,
         external_url: job?.external_url || partial.external_url || null,
-        tags: Array.isArray(job?.tags) ? job.tags : partial.tags || [],
-        fields: Array.isArray(job?.fields) ? job.fields : partial.fields || [],
-        categories: Array.isArray(job?.categories)
-            ? job.categories
-            : job?.categories && typeof job.categories === 'object'
-              ? Object.values(job.categories)
-              : partial.categories || [],
+        tags: normalizeArrayLike(job?.tags, partial.tags || []),
+        fields: normalizeArrayLike(job?.fields, partial.fields || []),
+        categories: normalizeArrayLike(job?.categories, partial.categories || []),
         url: job?.url || job?.permalink || partial.url || null,
         scraped_at: new Date().toISOString(),
         source: 'behance.net',
@@ -320,6 +323,7 @@ async function enqueueJobDetail(jobId, partial = {}, filters = baseFilters, { fo
     if (!force && !COLLECT_DETAILS) return;
     if (seenJobIds.has(normalized)) return;
     seenJobIds.add(normalized);
+    pendingDetailPartials.set(normalized, partial);
     await requestQueue.addRequest({
         url: buildJobDetailApiUrl(normalized),
         uniqueKey: `DETAIL_JSON_${normalized}_${buildFilterKey(filters)}`,
@@ -661,6 +665,7 @@ async function handleJsonDetail(context) {
         return;
     }
     if (!matchesLocation(job, baseFilters.location) || !matchesJobType(job, baseFilters.jobType)) return;
+    pendingDetailPartials.delete(jobId);
     await pushDatasetItems([composeJobItem(job, partial)]);
     detailsProcessed += 1;
 }
@@ -721,6 +726,7 @@ async function handleHtmlDetail(context) {
         return;
     }
     if (!job.id && jobId) job.id = jobId;
+    pendingDetailPartials.delete(jobId);
     await pushDatasetItems([composeJobItem(job, request.userData?.partial)]);
     detailsProcessed += 1;
 }
@@ -738,6 +744,7 @@ async function handlePlaywrightDetail(context) {
     const payload = await captureJsonWithPlaywright(request.userData?.detailUrl || request.url, { expectDetail: true });
     const job = payload?.job;
     if (!job) throw new Error(`Playwright detail missing payload for ${jobId}`);
+    pendingDetailPartials.delete(jobId);
     await pushDatasetItems([composeJobItem(job, request.userData?.partial)]);
     detailsProcessed += 1;
 }
@@ -895,6 +902,20 @@ async function main() {
     });
 
     await crawler.run();
+
+    if (pendingDetailPartials.size && saved < RESULTS_WANTED) {
+        const unresolved = [];
+        for (const [jobId, partial] of pendingDetailPartials.entries()) {
+            if (saved + unresolved.length >= RESULTS_WANTED) break;
+            const base = partial?.id ? partial : { ...partial, id: jobId };
+            unresolved.push(composeJobItem(base, partial));
+        }
+        if (unresolved.length) {
+            log.warning(`Detail requests failed for ${pendingDetailPartials.size} jobs – emitting ${unresolved.length} partial records instead.`);
+            await pushDatasetItems(unresolved);
+        }
+        pendingDetailPartials.clear();
+    }
 
     await Actor.setValue('RUN_STATS', {
         saved,
