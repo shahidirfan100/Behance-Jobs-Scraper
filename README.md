@@ -1,6 +1,6 @@
 # Behance Jobs Scraper
 
-Extract creative job opportunities from Behance's job board efficiently and reliably. This scraper is API-first (fast + low cost) and collects job listings including titles, companies, locations, job types, and detailed descriptions.
+Extract creative job opportunities from Behance's job board efficiently and reliably. This scraper is API-first (fast + low cost) and automatically falls back to pure HTML parsing or a stealth Playwright session when the API is unavailable, so job listings (titles, companies, locations, job types, descriptions, and metadata) are always collected.
 
 ## What does the Behance Jobs Scraper do?
 
@@ -11,6 +11,7 @@ The Behance Jobs Scraper enables you to extract comprehensive job data from Beha
 - Search jobs by keyword, location, and employment type
 - Extract complete job details including descriptions
 - Handle pagination automatically
+- Multi-layer fetch pipeline (JSON API → HTML JSON-LD → Playwright network capture) to survive blocking
 - Export data in multiple formats (JSON, CSV, Excel, HTML)
 - Scale to thousands of job listings
 - Bypass rate limiting with proxy support
@@ -91,6 +92,12 @@ The scraper accepts the following configuration options:
       <td>No</td>
     </tr>
     <tr>
+      <td><code>startUrls</code></td>
+      <td>Array</td>
+      <td>Optional Behance job detail URLs, listing URLs, JSON API endpoints, or sitemap XML files. These URLs are crawled first and can fully replace the keyword/location search.</td>
+      <td>No</td>
+    </tr>
+    <tr>
       <td><code>sort</code></td>
       <td>String</td>
       <td>Sort order: "published_on" (most recent) or "relevance"</td>
@@ -162,15 +169,24 @@ The scraper exports data in a structured format with the following fields:
 
 ```json
 {
+  "id": "335201",
   "title": "Senior Graphic Designer",
   "company": "Creative Agency Inc.",
   "location": "New York, NY",
+  "location_city": "New York",
+  "location_country": "United States",
+  "allow_remote": false,
   "salary": "$70,000 - $90,000",
   "job_type": "Full-time",
-  "date_posted": "2 days ago",
+  "date_posted": "2025-12-15T10:30:00.000Z",
   "description_html": "<p>We are seeking a talented graphic designer...</p>",
   "description_text": "We are seeking a talented graphic designer...",
-  "url": "https://www.behance.net/joblist/...",
+  "application_url": "https://careers.example.com/apply",
+  "external_url": "https://www.behance.net/joblist/335201/Senior-Graphic-Designer",
+  "tags": ["Branding", "Illustration"],
+  "fields": ["Branding", "Illustration"],
+  "categories": ["Identity Design"],
+  "url": "https://www.behance.net/joblist/335201/Senior-Graphic-Designer",
   "scraped_at": "2025-12-15T10:30:00.000Z",
   "source": "behance.net"
 }
@@ -179,14 +195,17 @@ The scraper exports data in a structured format with the following fields:
 ### Field Descriptions
 
 <ul>
+  <li><strong>id:</strong> Behance job identifier</li>
   <li><strong>title:</strong> Job position title</li>
   <li><strong>company:</strong> Hiring organization name</li>
-  <li><strong>location:</strong> Job location or "Remote"</li>
+  <li><strong>location / location_city / location_country:</strong> Structured location information</li>
+  <li><strong>allow_remote:</strong> Whether the job can be performed remotely</li>
   <li><strong>salary:</strong> Compensation range (if available)</li>
   <li><strong>job_type:</strong> Employment type (Full-time, Part-time, etc.)</li>
   <li><strong>date_posted:</strong> When the job was published</li>
-  <li><strong>description_html:</strong> Full job description in HTML format</li>
-  <li><strong>description_text:</strong> Plain text version of description</li>
+  <li><strong>description_html / description_text:</strong> HTML and plain text job descriptions</li>
+  <li><strong>application_url / external_url:</strong> Direct application links exposed by Behance</li>
+  <li><strong>tags / fields / categories:</strong> Arrays that describe the required skills</li>
   <li><strong>url:</strong> Direct link to the job posting</li>
   <li><strong>scraped_at:</strong> Timestamp of data extraction</li>
   <li><strong>source:</strong> Data source identifier</li>
@@ -275,4 +294,5 @@ The scraper exports data in a structured format with the following fields:
   <li><strong>Memory:</strong> 256-512 MB recommended</li>
   <li><strong>Timeout:</strong> 3600 seconds maximum</li>
   <li><strong>Proxy Support:</strong> Yes (Apify Proxy recommended)</li>
+  <li><strong>Pipeline:</strong> JSON API → HTML JSON-LD → Playwright interception with automatic fallbacks</li>
 </ul>
