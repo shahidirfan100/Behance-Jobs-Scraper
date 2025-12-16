@@ -796,66 +796,9 @@ async function handleRequest(context) {
     }
 }
 
-async function prepareStartRequests(startUrls = []) {
-    const normalized = startUrls
-        .map((source) => (typeof source === 'string' ? { url: source } : source))
-        .filter((source) => source?.url);
-    if (!normalized.length) {
-        await scheduleListPage(1, baseFilters);
-        return;
-    }
-    const requestList = await Actor.openRequestList('START_URLS', normalized);
-    for (;;) {
-        const req = await requestList.fetchNextRequest();
-        if (!req) break;
-        const trimmed = req.url.trim();
-        if (!trimmed) continue;
-        if (/\.xml($|\?)/i.test(trimmed) || /sitemap/i.test(trimmed)) {
-            await requestQueue.addRequest({
-                url: trimmed,
-                uniqueKey: `SITEMAP_${trimmed}`,
-                userData: { label: LABELS.SITEMAP },
-            });
-            continue;
-        }
-        const jobId = getJobIdFromUrl(trimmed);
-        if (jobId) {
-            await enqueueJobDetail(jobId, { url: trimmed }, baseFilters, { force: true });
-            continue;
-        }
-        if (/\/v2\/jobs/i.test(trimmed)) {
-            await requestQueue.addRequest({
-                url: trimmed,
-                uniqueKey: `CUSTOM_JSON_${trimmed}`,
-                userData: { label: LABELS.JSON_LIST, pageNo: 1, filters: baseFilters },
-            });
-            continue;
-        }
-        if (/\/joblist/i.test(trimmed)) {
-            try {
-                const parsed = new URL(trimmed);
-                const filters = {
-                    keyword: parsed.searchParams.get('search') || baseFilters.keyword,
-                    location: parsed.searchParams.get('location') || baseFilters.location,
-                    jobType: parsed.searchParams.get('type') || parsed.searchParams.get('job_type') || baseFilters.jobType,
-                    sort: parsed.searchParams.get('sort') || baseFilters.sort,
-                };
-                const pageNo = Number(parsed.searchParams.get('page')) || 1;
-                await scheduleListPage(pageNo, filters);
-            } catch {
-                await scheduleListPage(1, baseFilters);
-            }
-            continue;
-        }
-        await scheduleListPage(1, baseFilters);
-    }
-    await requestList.persistState();
-}
-
 async function main() {
     const input = (await Actor.getInput()) || {};
     const {
-        startUrls,
         keyword: keywordInput = '',
         location: locationInput = '',
         job_type: jobTypeInput = '',
@@ -883,7 +826,7 @@ async function main() {
         `Starting Behance jobs crawl keyword="${baseFilters.keyword}" location="${baseFilters.location}" job_type="${baseFilters.jobType}" sort="${baseFilters.sort}" results=${RESULTS_WANTED} collectDetails=${COLLECT_DETAILS} max_pages=${MAX_PAGES}`,
     );
 
-    await prepareStartRequests(Array.isArray(startUrls) ? startUrls : []);
+    await scheduleListPage(1, baseFilters);
 
     const crawler = new HttpCrawler({
         requestQueue,

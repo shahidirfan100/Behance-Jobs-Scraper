@@ -4,13 +4,6 @@
   "type": "object",
   "schemaVersion": 1,
   "properties": {
-    "startUrls": {
-      "title": "Search via URLs (Optional)",
-      "type": "array",
-      "description": "Optional. Provide Behance job URLs (/joblist/<id>/...), listing URLs (/joblist?page=...), API endpoints (/v2/jobs?...), or sitemap XML files. These URLs are crawled first (and can replace the keyword search).",
-      "editor": "requestListSources",
-      "prefill": []
-    },
     "keyword": {
       "title": "Search Keyword",
       "type": "string",

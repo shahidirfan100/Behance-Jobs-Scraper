@@ -92,12 +92,6 @@ The scraper accepts the following configuration options:
       <td>No</td>
     </tr>
     <tr>
-      <td><code>startUrls</code></td>
-      <td>Array</td>
-      <td>Optional Behance job detail URLs, listing URLs, JSON API endpoints, or sitemap XML files. These URLs are crawled first and can fully replace the keyword/location search.</td>
-      <td>No</td>
-    </tr>
-    <tr>
       <td><code>sort</code></td>
       <td>String</td>
       <td>Sort order: "published_on" (most recent) or "relevance"</td>
